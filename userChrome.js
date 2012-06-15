@@ -1,4 +1,4 @@
-/* :::::::: Sub-Script/Overlay Loader v3.0.34mod ::::::::::::::: */
+/* :::::::: Sub-Script/Overlay Loader v3.0.38mod ::::::::::::::: */
 
 // automatically includes all files ending in .uc.xul and .uc.js from the profile's chrome folder
 
@@ -14,6 +14,10 @@
 // 4.Support window.userChrome_js.loadOverlay(overlay [,observer]) //
 // Modified by Alice0775
 //
+// Date 2012/04/19 23:00 starUIをbindを使うように
+// Date 2012/04/19 21:00 starUI元に戻した
+// Date 2012/02/04 00:00 due to bug 726444 Implement the Downloads Panel.
+// Date 2012/02/04 00:00 due to bug 726440
 // Date 2011/11/19 15:30 REPLACECACHE 追加 Bug 648125
 // Date 2011/09/30 13:40 fix bug 640158
 // Date 2011/09/30 13:00 fix bug 640158
@@ -46,18 +50,19 @@
 (function(){
   // -- config --
   const EXCLUDE_CHROMEHIDDEN = false; //chromehiddenなwindow(popup等)ではロード: しないtrue, する[false]
-  const USE_0_63_FOLDER = true; //0.63のフォルダ規則を使うtrue, 使わない[false]
+  const USE_0_63_FOLDER = true; //0.63のフォルダ規則を使う[true], 使わないfalse
   const FORCESORTSCRIPT = false; //強制的にスクリプトをファイル名順でソートするtrue, しない[false]
   const AUTOREMOVEBOM   = false;  //BOMを自動的に, 取り除く:true, 取り除かない[false](元ファイルは.BOMとして残る)
   const REPLACEDOCUMENTOVERLAY   = true;  //document.overlayを 置き換える[true], 置き換えないfalse
-  const REPLACECACHE = true; //スクリプトの更新日付によりキャッシュを更新する: [true] , しない:false
+  const REPLACECACHE = false; //スクリプトの更新日付によりキャッシュを更新する: true , しない:[false]
   //=====================USE_0_63_FOLDER = falseの時===================
   var UCJS      = new Array("UCJSFiles","userContent","userMenu"); //UCJS Loader 仕様を適用 (NoScriptでfile:///を許可しておく)
   var arrSubdir = new Array("", "xul","TabMixPlus","withTabMixPlus", "SubScript", "UCJSFiles", "userCrome.js.0.8","userContent","userMenu");    //スクリプトはこの順番で実行される
   //===================================================================
   const ALWAYSEXECUTE   = 'rebuild_userChrome.uc.xul'; //常に実行するスクリプト
   var INFO = true;
-  var BROWSERCHROME = "chrome://browser/content/browser.xul";//Seamonkey:chrome://navigator/content/navigator.xul
+  var BROWSERCHROME = "chrome://browser/content/browser.xul"; //Firfox
+  //var BROWSERCHROME = "chrome://navigator/content/navigator.xul"; //SeaMonkey:
   // -- config --
 /* USE_0_63_FOLDER true の時
  * chrome直下およびchrome/xxx.uc 内の *.uc.js および *.uc.xul
@@ -445,6 +450,9 @@ this.debug('Parsing getScripts: '+((new Date()).getTime()-Start) +'msec');
     load: function (){
         if(!window.userChrome_js.overlayUrl.length) return --window.userChrome_js.overlayWait;
         var [url, aObserver, doc] = this.overlayUrl.shift();
+        if (!!aObserver && typeof aObserver == 'function') {
+          aObserver.observe = aObserver;
+        }
         if (!doc) doc = document;
         if (!(doc instanceof XULDocument))
           return 0;
@@ -454,8 +462,7 @@ this.debug('Parsing getScripts: '+((new Date()).getTime()-Start) +'msec');
               //XXX We just caused localstore.rdf to be re-applied (bug 640158)
               if ("retrieveToolbarIconsizesFromTheme" in window)
                 retrieveToolbarIconsizesFromTheme();
-
-              if (!!aObserver) {
+              if (!!aObserver && typeof aObserver.observe == 'function') {
                 try {
                   aObserver.observe(subject, topic, data);
                 } catch(ex){
@@ -724,16 +731,29 @@ this.debug('Parsing getScripts: '+((new Date()).getTime()-Start) +'msec');
       //面倒だからFirefox 3 の場合はeditBookmarkOverlay.xulを先読みしておく
       var delay = 500;
       if (location.href === that.BROWSERCHROME &&
-       /*  !('TreeStyleTabService' in window) && */
           typeof StarUI != 'undefined' &&
           !(StarUI._overlayLoading || StarUI._overlayLoaded)) {
-        var loadObserver = {
-          observe: function (aSubject, aTopic, aData) {
-            StarUI._overlayLoading = false;
-            StarUI._overlayLoaded = true;
-          }
-        };
-        that.loadOverlay("chrome://browser/content/places/editBookmarkOverlay.xul", loadObserver, doc);
+        // xxxx bug 726440
+        StarUI._overlayLoading = true;
+        document.loadOverlay(
+          "chrome://browser/content/places/editBookmarkOverlay.xul",
+          (function (aSubject, aTopic, aData) {
+            //XXX We just caused localstore.rdf to be re-applied (bug 640158)
+            if ("retrieveToolbarIconsizesFromTheme" in window)
+              retrieveToolbarIconsizesFromTheme();
+
+            // Move the header (star, title, button) into the grid,
+            // so that it aligns nicely with the other items (bug 484022).
+            let header = this._element("editBookmarkPanelHeader");
+            let rows = this._element("editBookmarkPanelGrid").lastChild;
+            rows.insertBefore(header, rows.firstChild);
+            header.hidden = false;
+
+            this._overlayLoading = false;
+            this._overlayLoaded = true;
+            //this._doShowEditBookmarkPanel(aItemId, aAnchorElement, aPosition);
+          }).bind(StarUI)
+        );
         delay = 0;
       }
       setTimeout(function(doc){that.runOverlays(doc);}, delay, doc);
